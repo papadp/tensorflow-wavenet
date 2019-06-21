@@ -205,55 +205,67 @@ def main():
             sess.run(outputs, feed_dict={samples: x})
         print('Done.')
 
-    last_sample_timestamp = datetime.now()
-    for step in range(args.samples):
-        if args.fast_generation:
-            outputs = [next_sample]
-            outputs.extend(net.push_ops)
-            window = waveform[-1]
-        else:
-            if len(waveform) > net.receptive_field:
-                window = waveform[-net.receptive_field:]
+
+    from copy import deepcopy
+
+    original_waveform = deepcopy(waveform)
+    # original_outputs = deepcopy(outputs)
+
+    for x in range(1000):
+        print("X IS !!!!!", x)
+
+        waveform = deepcopy(original_waveform)
+        # outputs = deepcopy(original_outputs)
+
+        last_sample_timestamp = datetime.now()
+        for step in range(args.samples):
+            if args.fast_generation:
+                outputs = [next_sample]
+                outputs.extend(net.push_ops)
+                window = waveform[-1]
             else:
-                window = waveform
-            outputs = [next_sample]
+                if len(waveform) > net.receptive_field:
+                    window = waveform[-net.receptive_field:]
+                else:
+                    window = waveform
+                outputs = [next_sample]
 
-        # Run the WaveNet to predict the next sample.
-        prediction = sess.run(outputs, feed_dict={samples: window})[0]
+            # Run the WaveNet to predict the next sample.
+            prediction = sess.run(outputs, feed_dict={samples: window})[0]
 
-        # Scale prediction distribution using temperature.
-        np.seterr(divide='ignore')
-        scaled_prediction = np.log(prediction) / args.temperature
-        scaled_prediction = (scaled_prediction -
-                             np.logaddexp.reduce(scaled_prediction))
-        scaled_prediction = np.exp(scaled_prediction)
-        np.seterr(divide='warn')
+            # Scale prediction distribution using temperature.
+            np.seterr(divide='ignore')
+            scaled_prediction = np.log(prediction) / args.temperature
+            scaled_prediction = (scaled_prediction -
+                                 np.logaddexp.reduce(scaled_prediction))
+            scaled_prediction = np.exp(scaled_prediction)
+            np.seterr(divide='warn')
 
-        # Prediction distribution at temperature=1.0 should be unchanged after
-        # scaling.
-        if args.temperature == 1.0:
-            np.testing.assert_allclose(
-                    prediction, scaled_prediction, atol=1e-5,
-                    err_msg='Prediction scaling at temperature=1.0 '
-                            'is not working as intended.')
+            # Prediction distribution at temperature=1.0 should be unchanged after
+            # scaling.
+            if args.temperature == 1.0:
+                np.testing.assert_allclose(
+                        prediction, scaled_prediction, atol=1e-5,
+                        err_msg='Prediction scaling at temperature=1.0 '
+                                'is not working as intended.')
 
-        sample = np.random.choice(
-            np.arange(quantization_channels), p=scaled_prediction)
-        waveform.append(sample)
+            sample = np.random.choice(
+                np.arange(quantization_channels), p=scaled_prediction)
+            waveform.append(sample)
 
-        # Show progress only once per second.
-        current_sample_timestamp = datetime.now()
-        time_since_print = current_sample_timestamp - last_sample_timestamp
-        if time_since_print.total_seconds() > 1.:
-            print('Sample {:3<d}/{:3<d}'.format(step + 1, args.samples),
-                  end='\r')
-            last_sample_timestamp = current_sample_timestamp
+            # Show progress only once per second.
+            current_sample_timestamp = datetime.now()
+            time_since_print = current_sample_timestamp - last_sample_timestamp
+            if time_since_print.total_seconds() > 1.:
+                print('Sample {:3<d}/{:3<d}'.format(step + 1, args.samples),
+                      end='\r')
+                last_sample_timestamp = current_sample_timestamp
 
-        # If we have partial writing, save the result so far.
-        if (args.wav_out_path and args.save_every and
-                (step + 1) % args.save_every == 0):
-            out = sess.run(decode, feed_dict={samples: waveform})
-            write_wav(out, wavenet_params['sample_rate'], args.wav_out_path)
+            # If we have partial writing, save the result so far.
+            if (args.wav_out_path and args.save_every and
+                    (step + 1) % args.save_every == 0):
+                out = sess.run(decode, feed_dict={samples: waveform})
+                write_wav(out, wavenet_params['sample_rate'], args.wav_out_path)
 
         # Introduce a newline to clear the carriage return from the progress.
         print()
